@@ -1,0 +1,42 @@
+# Informe Técnico — PyStudio (Editor de Imágenes POO)
+
+## 1. Análisis del problema
+El desarrollo surge de la necesidad de contar con una aplicación de escritorio liviana para aplicar ediciones visuales frecuentes sobre fotografías digitales sin recurrir a suites pesadas.
+* **Público objetivo:** Estudiantes, creadores de contenido y usuarios generales que requieren ajustes rápidos de color, enfoque, contraste y orientación.
+* **Funcionalidades principales:** Carga validada de imágenes, procesamiento mediante filtros configurables, historial multinivel para deshacer cambios, restauración del estado original y exportación a disco.
+* **Limitaciones:** El procesamiento se realiza en memoria RAM sobre imágenes estáticas (no soporta edición por capas múltiples ni procesamiento de video).
+
+## 2. Diseño inicial
+Se diseñó la solución separando el dominio del problema en tres capas claras para evitar mezclar widgets visuales con lógica de procesamiento:
+1. **Capa de Modelos (`modelos.py`):**
+   * `ImagenEditable`: Administra la imagen activa, resguarda una copia inmutable de la imagen original y gestiona una pila de historial.
+   * `Filtro` (clase abstracta) y sus subclases (`FiltroEscalaGrises`, `FiltroDesenfoque`, `FiltroContraste`, `FiltroRotacion`): Encapsulan cada algoritmo de transformación.
+2. **Capa de Servicios (`servicios.py`):**
+   * `EditorServicio`: Actúa como intermediario entre la interfaz y los modelos, controlando el proyecto activo y ejecutando filtros de forma polimórfica.
+3. **Capa de Presentación (`interfaz.py`):**
+   * `VentanaPrincipal`: Renderiza la ventana, captura eventos de botones y deslizadores, y delega cada acción a `EditorServicio`.
+
+## 3. Arquitectura
+El sistema sigue una arquitectura modular en capas con flujo unidireccional de dependencias (`main.py` → `interfaz.py` → `servicios.py` → `modelos.py`). La interfaz nunca manipula directamente objetos de la librería `Pillow` para procesar imágenes; únicamente solicita operaciones a `EditorServicio` y recibe una imagen lista para renderizar.
+
+## 4. Aplicación de POO
+
+| Concepto | Clase o método | Archivo | Explicación |
+| :--- | :--- | :--- | :--- |
+| **Clases y objetos** | `ImagenEditable`, `EditorServicio`, `VentanaPrincipal` | `modelos.py`, `servicios.py`, `interfaz.py` | Cada clase modela una responsabilidad única: estado de la imagen, coordinación de operaciones y presentación visual. |
+| **Encapsulamiento** | `__imagen_original`, `__historial`, `__radio`, `@property` | `modelos.py` | Protege la imagen base para impedir su alteración directa, limita el historial a 10 estados y valida mediante setters que el radio de desenfoque (`0.1–20.0`) y contraste (`0.1–5.0`) sean válidos. |
+| **Herencia** | `FiltroEscalaGrises`, `FiltroDesenfoque`, `FiltroContraste`, `FiltroRotacion` | `modelos.py` | Heredan de la clase base `Filtro`, reutilizando el atributo `_nombre`, la propiedad `nombre` y la inicialización mediante `super().__init__()`. |
+| **Polimorfismo** | `Filtro.aplicar(imagen)` y `EditorServicio.aplicar_filtro(filtro)` | `modelos.py`, `servicios.py` | `EditorServicio` invoca `filtro.aplicar()` sin conocer la subclase concreta; cada filtro ejecuta su propia transformación sobre la imagen. |
+| **Abstracción** | `Filtro(ABC)` con `@abstractmethod aplicar()` | `modelos.py` | Establece un contrato obligatorio: impide instanciar `Filtro` directamente y exige que toda subclase implemente `aplicar(imagen)`. |
+| **Relaciones** | Composición (`EditorServicio` → `ImagenEditable`) y Asociación (`EditorServicio` → `Filtro`) | `servicios.py` | `EditorServicio` controla el ciclo de vida del objeto `ImagenEditable` activo (composición) y recibe instancias temporales de `Filtro` para operar (asociación). |
+
+Ejemplo de polimorfismo y abstracción en `servicios.py`:
+```python
+def aplicar_filtro(self, filtro: Filtro) -> Image.Image:
+    proyecto = self.proyecto_actual
+    if not isinstance(filtro, Filtro):
+        raise TypeError("El parámetro debe ser una instancia de una subclase de Filtro.")
+
+    imagen_procesada = filtro.aplicar(proyecto.imagen_actual)
+    proyecto.actualizar_imagen(imagen_procesada)
+    return proyecto.imagen_actual
